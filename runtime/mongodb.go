@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -17,13 +18,20 @@ func RestfulAPIPost(client *mongo.Client, dbName string, collName string, filter
 	collection := client.Database(dbName).Collection(collName)
 
 	var checkItem map[string]interface{}
-	collection.FindOne(context.TODO(), filter).Decode(&checkItem)
+	err := collection.FindOne(context.TODO(), filter).Decode(&checkItem)
+	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+		return false, fmt.Errorf("find in %s: %w", collName, err)
+	}
 
 	if checkItem == nil {
-		collection.InsertOne(context.TODO(), postData)
+		if _, err := collection.InsertOne(context.TODO(), postData); err != nil {
+			return false, fmt.Errorf("insert into %s: %w", collName, err)
+		}
 		return false, nil
 	} else {
-		collection.UpdateOne(context.TODO(), filter, bson.M{"$set": postData})
+		if _, err := collection.UpdateOne(context.TODO(), filter, bson.M{"$set": postData}); err != nil {
+			return true, fmt.Errorf("update %s: %w", collName, err)
+		}
 		return true, nil
 	}
 }
@@ -36,6 +44,8 @@ func RestfulAPIPostMany(client *mongo.Client, dbName string, collName string, fi
 	}
 	collection := client.Database(dbName).Collection(collName)
 
-	collection.InsertMany(context.TODO(), postDataArray)
+	if _, err := collection.InsertMany(context.TODO(), postDataArray); err != nil {
+		return false, fmt.Errorf("insert many into %s: %w", collName, err)
+	}
 	return false, nil
 }
